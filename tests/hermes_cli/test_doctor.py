@@ -1358,3 +1358,63 @@ class TestDoctorStaleMaxIterationsDrift:
             monkeypatch, tmp_path, fix=False, ghost=None, cfg_turns=400,
         )
         assert "shadows" not in out
+
+
+class TestDoctorHomebrewEntrypoint:
+    """Command Installation section: Homebrew installs should not warn about missing venv."""
+
+    def _run_command_installation(self, monkeypatch, tmp_path, executable):
+        """Run doctor and return captured stdout, scoped to the Command Installation section."""
+        import io, contextlib
+        from argparse import Namespace
+
+        project_root = tmp_path / "project"
+        hermes_home = tmp_path / ".hermes"
+        project_root.mkdir()
+        hermes_home.mkdir()
+
+        monkeypatch.setattr(doctor_mod, "PROJECT_ROOT", project_root)
+        monkeypatch.setattr(doctor_mod, "HERMES_HOME", hermes_home)
+        monkeypatch.setattr(sys, "executable", str(executable))
+        monkeypatch.setattr("sys.platform", "linux")
+
+        import types
+        fake_model_tools = types.SimpleNamespace(
+            check_tool_availability=lambda *a, **kw: None,
+            TOOLSET_REQUIREMENTS={},
+        )
+        monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
+
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                doctor_mod.run_doctor(Namespace(fix=False))
+        except SystemExit:
+            pass
+        return buf.getvalue()
+
+    def test_homebrew_install_shows_ok_not_warning(self, monkeypatch, tmp_path):
+        # Simulate Homebrew layout: python lives in libexec/bin, hermes is a sibling
+        libexec_bin = tmp_path / "Cellar" / "hermes-agent" / "1.0" / "libexec" / "bin"
+        libexec_bin.mkdir(parents=True)
+        python_exe = libexec_bin / "python"
+        hermes_bin = libexec_bin / "hermes"
+        python_exe.touch()
+        hermes_bin.touch()
+
+        out = self._run_command_installation(monkeypatch, tmp_path, python_exe)
+
+        assert "Homebrew entry point exists" in out
+        assert "Venv entry point not found" not in out
+
+    def test_non_homebrew_without_venv_shows_warning(self, monkeypatch, tmp_path):
+        # Simulate a regular install with no venv — warning should appear
+        regular_bin = tmp_path / "usr" / "bin"
+        regular_bin.mkdir(parents=True)
+        python_exe = regular_bin / "python"
+        python_exe.touch()
+
+        out = self._run_command_installation(monkeypatch, tmp_path, python_exe)
+
+        assert "Venv entry point not found" in out
+        assert "Homebrew entry point exists" not in out

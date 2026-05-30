@@ -1177,6 +1177,11 @@ def run_doctor(args):
 
     if sys.platform != "win32":
         _section("Command Installation")
+        # Detect Homebrew-managed install: sys.executable lives under a Cellar prefix
+        # and the hermes binary is a sibling of the python executable.
+        _homebrew_bin = Path(sys.executable).with_name("hermes")
+        _is_homebrew = "/Cellar/" in str(Path(sys.executable).resolve()) and _homebrew_bin.exists()
+
         # Determine the venv entry point location
         _venv_bin = None
         for _venv_name in ("venv", ".venv"):
@@ -1197,13 +1202,16 @@ def run_doctor(args):
         _cmd_link = _cmd_link_dir / "hermes"
 
         if _venv_bin is None:
-            check_warn(
-                "Venv entry point not found",
-                "(hermes not in venv/bin/ or .venv/bin/ — reinstall with pip install -e '.[all]')"
-            )
-            manual_issues.append(
-                f"Reinstall entry point: cd {PROJECT_ROOT} && source venv/bin/activate && pip install -e '.[all]'"
-            )
+            if _is_homebrew:
+                check_ok(f"Homebrew entry point exists ({_homebrew_bin})")
+            else:
+                check_warn(
+                    "Venv entry point not found",
+                    "(hermes not in venv/bin/ or .venv/bin/ — reinstall with pip install -e '.[all]')"
+                )
+                manual_issues.append(
+                    f"Reinstall entry point: cd {PROJECT_ROOT} && source venv/bin/activate && pip install -e '.[all]'"
+                )
         else:
             check_ok(f"Venv entry point exists ({_venv_bin.relative_to(PROJECT_ROOT)})")
 
