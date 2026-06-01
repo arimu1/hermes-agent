@@ -5423,7 +5423,7 @@ def _record_task_failure(
     error: str,
     *,
     outcome: str,
-    failure_limit: int = None,
+    failure_limit: int | None = None,
     release_claim: bool = False,
     end_run: bool = False,
     event_payload_extra: Optional[dict] = None,
@@ -5578,7 +5578,7 @@ def _record_spawn_failure(
     task_id: str,
     error: str,
     *,
-    failure_limit: int = None,
+    failure_limit: int | None = None,
 ) -> bool:
     return _record_task_failure(
         conn, task_id, error,
@@ -6937,9 +6937,8 @@ def task_age(task: Task) -> dict:
     _co = _to_epoch(task.completed_at)
     age_since_created = now - _c if _c is not None else None
     age_since_started = now - _s if _s is not None else None
-    time_to_complete = (
-        _co - (_s or _c) if _co is not None else None
-    )
+    _start = _s if _s is not None else _c
+    time_to_complete = _co - _start if (_co is not None and _start is not None) else None
     return {
         "created_age_seconds": age_since_created,
         "started_age_seconds": age_since_started,
