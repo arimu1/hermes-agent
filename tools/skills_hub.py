@@ -3700,6 +3700,12 @@ def parallel_search_sources(
             fut = pool.submit(_search_one_source, src, query, lim)
             futures[fut] = src.source_id()
 
+        # submit() spins up worker threads synchronously; mark them as daemons
+        # so a stalled network connect cannot prevent the process from exiting
+        # after the CLI command completes.
+        for t in pool._threads:
+            t.daemon = True
+
         try:
             for fut in as_completed(futures, timeout=overall_timeout):
                 try:
