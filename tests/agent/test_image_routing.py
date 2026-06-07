@@ -205,6 +205,54 @@ class TestSupportsVisionOverride:
         }
         assert _supports_vision_override(cfg, "custom", "my-llava") is True
 
+    def test_list_custom_providers_via_config_name(self):
+        # Regression #41036: list-style custom_providers, model.provider holds
+        # the "custom:<name>" form, runtime provider is "custom".
+        cfg = {
+            "model": {"provider": "custom:9router-anthropic"},
+            "custom_providers": [
+                {
+                    "name": "9router-anthropic",
+                    "models": {"mimoanth/mimo-v2.5": {"supports_vision": True}},
+                },
+            ],
+        }
+        assert _supports_vision_override(cfg, "custom", "mimoanth/mimo-v2.5") is True
+
+    def test_list_custom_providers_via_runtime_name(self):
+        # Runtime provider already carries the "custom:<name>" form.
+        cfg = {
+            "custom_providers": [
+                {"name": "my-vllm", "models": {"my-llava": {"supports_vision": True}}},
+            ],
+        }
+        assert _supports_vision_override(cfg, "custom:my-vllm", "my-llava") is True
+
+    def test_list_custom_providers_false_propagates(self):
+        cfg = {
+            "model": {"provider": "9router"},
+            "custom_providers": [
+                {"name": "9router", "models": {"m": {"supports_vision": False}}},
+            ],
+        }
+        assert _supports_vision_override(cfg, "custom", "m") is False
+
+    def test_list_custom_providers_no_name_match_returns_none(self):
+        cfg = {
+            "model": {"provider": "custom:other"},
+            "custom_providers": [
+                {"name": "9router", "models": {"m": {"supports_vision": True}}},
+            ],
+        }
+        assert _supports_vision_override(cfg, "custom", "m") is None
+
+    def test_list_custom_providers_malformed_entries_ignored(self):
+        cfg = {
+            "model": {"provider": "9router"},
+            "custom_providers": ["not-a-dict", {"name": "9router", "models": "oops"}],
+        }
+        assert _supports_vision_override(cfg, "custom", "m") is None
+
     def test_quoted_false_string_in_yaml_does_not_enable(self):
         # Real-world: user writes supports_vision: "false" (quoted).
         cfg = {"model": {"supports_vision": "false"}}
@@ -278,6 +326,21 @@ class TestAutoModeRespectsOverride:
         # Unchanged baseline: unknown custom model → text.
         with patch("agent.models_dev.get_model_capabilities", return_value=None):
             assert decide_image_input_mode("custom", "unknown", {}) == "text"
+
+    def test_auto_native_for_list_custom_provider_supports_vision(self):
+        # Regression #41036: auto must route natively when a list-style named
+        # custom provider declares the active model as vision-capable.
+        cfg = {
+            "model": {"provider": "custom:9router-anthropic"},
+            "custom_providers": [
+                {
+                    "name": "9router-anthropic",
+                    "models": {"mimoanth/mimo-v2.5": {"supports_vision": True}},
+                },
+            ],
+        }
+        with patch("agent.models_dev.get_model_capabilities", return_value=None):
+            assert decide_image_input_mode("custom", "mimoanth/mimo-v2.5", cfg) == "native"
 
     def test_explicit_aux_vision_override_still_wins(self):
         # If the user has configured a dedicated vision aux backend, respect

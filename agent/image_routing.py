@@ -186,6 +186,8 @@ def _supports_vision_override(
          (named custom providers — ``provider`` may be the runtime-resolved
          value ``"custom"`` and/or the user-declared name under
          ``model.provider``; both are tried)
+      3. ``custom_providers[].models.<model>.supports_vision``
+         (legacy list-style named custom providers, matched by ``name``)
 
     Returns None when no override is set, so the caller falls through to
     models.dev. Returns False explicitly only when the user wrote a
@@ -219,6 +221,36 @@ def _supports_vision_override(
         coerced = _coerce_capability_bool(per_model.get("supports_vision"))
         if coerced is not None:
             return coerced
+
+    # 3. Legacy list-style named custom providers:
+    #    custom_providers: [{name: X, models: {<model>: {supports_vision: ...}}}]
+    #    Match the entry by ``name`` against the runtime provider and the
+    #    user-declared ``model.provider``, accepting both the bare name and the
+    #    "custom:<name>" runtime form.
+    custom_raw = cfg.get("custom_providers")
+    if isinstance(custom_raw, list):
+        candidate_names = set()
+        for cand in (provider, config_provider):
+            cand = str(cand or "").strip()
+            if not cand:
+                continue
+            candidate_names.add(cand)
+            if cand.startswith("custom:"):
+                candidate_names.add(cand[len("custom:"):])
+        if candidate_names:
+            for entry_raw in custom_raw:
+                if not isinstance(entry_raw, dict):
+                    continue
+                name = str(entry_raw.get("name") or "").strip()
+                if not name or name not in candidate_names:
+                    continue
+                models_raw = entry_raw.get("models")
+                models_cfg = models_raw if isinstance(models_raw, dict) else {}
+                per_model_raw = models_cfg.get(model)
+                per_model = per_model_raw if isinstance(per_model_raw, dict) else {}
+                coerced = _coerce_capability_bool(per_model.get("supports_vision"))
+                if coerced is not None:
+                    return coerced
     return None
 
 
